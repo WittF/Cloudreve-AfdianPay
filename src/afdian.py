@@ -7,10 +7,12 @@ import time
 
 import requests
 
+from logger import logger
+
 try:
     from dotenv import load_dotenv
 except:
-    print("未找到dotenv模块")
+    logger.error("未找到dotenv模块")
 
 
 def db_file():
@@ -26,6 +28,7 @@ def db_file():
                (order_no text, amount text, notify_url text)''')
         conn.commit()
         conn.close()
+        logger.info("创建数据库文件 afdian_pay.db")
         return
 
 
@@ -37,6 +40,7 @@ def db_insert(order_no, amount, notify_url):
     c.execute("INSERT INTO afdian_pay VALUES ('" + order_no + "', '" + amount + "', '" + notify_url + "')")
     conn.commit()
     conn.close()
+    logger.debug(f"插入订单记录 - 订单号: {order_no}, 金额: {amount}")
     return True
 
 
@@ -49,6 +53,7 @@ def new_order(order_info, amount):
     order_no = order_info['order_no']
     order_url = afdian_url + "&remark=" + str(order_no) + "&custom_price=" + str(math.ceil(amount / 100))
     db_insert(order_no, str(round(amount / 100)), order_info['notify_url'])
+    logger.info(f"生成爱发电订单链接 - 订单号: {order_no}, 金额: {amount}")
     return order_url
 
 
@@ -56,8 +61,10 @@ def check_order(order_no, out_trade_no):
     # API主动验证
     api_data = api_check(out_trade_no)
     if api_data[0] == "":
+        logger.warning(f"API验证失败 - 订单号: {order_no}")
         return ["", 0, ""]
     if api_data[1] == 0:
+        logger.warning(f"API返回金额为0 - 订单号: {order_no}")
         return ["", 0, ""]
     # 本地数据库验证
     db_file()
@@ -68,8 +75,10 @@ def check_order(order_no, out_trade_no):
     for row in cursor:
         if row[0] == order_no:
             conn.close()
+            logger.debug(f"数据库查询成功 - 订单号: {order_no}")
             return row
     conn.close()
+    logger.warning(f"数据库未找到订单记录 - 订单号: {order_no}")
     return ["", 0, ""]
 
 
@@ -85,12 +94,18 @@ def api_check(out_trade_no):
     sign = hashlib.md5(sign_data.encode(encoding='UTF-8')).hexdigest()
     post_data = {"user_id": user_id, "params": params, "ts": ts, "sign": sign}
     # 发送post请求
-    response = requests.post(url, data=post_data)
-    total_count = json.loads(response.text)['data']["total_count"]
-    if total_count == 0:
+    try:
+        response = requests.post(url, data=post_data)
+        total_count = json.loads(response.text)['data']["total_count"]
+        if total_count == 0:
+            logger.warning(f"API查询无结果 - 订单号: {out_trade_no}")
+            return ["", ""]
+        # 解析json
+        response = json.loads(response.text)['data']["list"][0]
+        total_amount = int(str(response['total_amount']).split(".")[0])
+        order_no = response['remark']
+        logger.debug(f"API查询成功 - 订单号: {order_no}, 金额: {total_amount}")
+        return [order_no, total_amount]
+    except Exception as e:
+        logger.error(f"API请求异常: {str(e)}")
         return ["", ""]
-    # 解析json
-    response = json.loads(response.text)['data']["list"][0]
-    total_amount = int(str(response['total_amount']).split(".")[0])
-    order_no = response['remark']
-    return [order_no, total_amount]
