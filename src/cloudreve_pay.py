@@ -23,6 +23,29 @@ except:
     logger.error("未找到dotenv模块")
 app = Flask(__name__)
 
+# 添加请求日志中间件
+@app.before_request
+def log_request_info():
+    logger.info('请求信息:')
+    logger.info(f'请求方法: {request.method}')
+    logger.info(f'请求URL: {request.url}')
+    logger.info(f'请求头: {dict(request.headers)}')
+    if request.is_json:
+        logger.info(f'请求体: {request.get_json()}')
+    elif request.form:
+        logger.info(f'表单数据: {request.form}')
+    elif request.data:
+        logger.info(f'原始数据: {request.get_data()}')
+    logger.info('-------------------------')
+
+# 添加响应日志中间件
+@app.after_request
+def log_response_info(response):
+    logger.info('响应信息:')
+    logger.info(f'状态码: {response.status}')
+    logger.info(f'响应头: {dict(response.headers)}')
+    logger.info('-------------------------')
+    return response
 
 # 初始化检查
 def check():
